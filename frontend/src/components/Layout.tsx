@@ -6,6 +6,7 @@ import { ArrowRight } from 'lucide-react';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import CartDrawer from './CartDrawer';
+import HelpChatbot from './HelpChatbot';
 import { useCartStore } from '@/store/cartStore';
 
 interface LayoutProps {
@@ -64,6 +65,9 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Sidebar drawer reference */}
       <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} />
+
+      {/* Floating AI Help Chatbot */}
+      <HelpChatbot />
     </div>
   );
 }
