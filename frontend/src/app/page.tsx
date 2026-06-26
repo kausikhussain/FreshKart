@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { ShoppingBag, ChevronRight, Zap, Award, ShieldCheck, Heart } from 'lucide-react';
+import { ShoppingBag, ChevronRight, Zap, Award, ShieldCheck, Heart, Clock, Utensils, Sparkles, Check } from 'lucide-react';
 import Layout from '@/components/Layout';
 import ProductCard from '@/components/ProductCard';
 import { apiRequest } from '@/lib/api';
+import { useCartStore } from '@/store/cartStore';
 
 interface Category {
   _id: string;
@@ -30,9 +31,192 @@ interface Product {
   isTrending?: boolean;
 }
 
+const RECIPES = [
+  {
+    id: 'recipe-paneer',
+    title: 'Malai Paneer Butter Masala',
+    description: 'A rich, creamy, and restaurant-style curry made with fresh paneer cooked in a spiced tomato butter gravy.',
+    image: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&q=80&w=600',
+    prepTime: '15m',
+    difficulty: 'Easy',
+    serves: '2-3',
+    ingredientSlugs: ['fresh-malai-paneer', 'amul-salted-butter', 'fresh-tomato'],
+    fallbackIngredients: [
+      {
+        _id: '106',
+        name: 'Fresh Malai Paneer',
+        slug: 'fresh-malai-paneer',
+        price: 90,
+        discountPrice: 82,
+        unit: '200 g',
+        images: ['https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&q=80&w=400'],
+        stock: 75
+      },
+      {
+        _id: '105',
+        name: 'Amul Salted Butter',
+        slug: 'amul-salted-butter',
+        price: 105,
+        discountPrice: 102,
+        unit: '100 g',
+        images: ['https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?auto=format&fit=crop&q=80&w=400'],
+        stock: 90
+      },
+      {
+        _id: '103',
+        name: 'Fresh Tomato (Hybrid)',
+        slug: 'fresh-tomato',
+        price: 35,
+        discountPrice: 28,
+        unit: '500 g',
+        images: ['https://images.unsplash.com/photo-1595855759920-86582396756a?auto=format&fit=crop&q=80&w=400'],
+        stock: 150
+      }
+    ]
+  },
+  {
+    id: 'recipe-breakfast',
+    title: 'Classic Butter Toast & Milk',
+    description: 'A quick, classic breakfast containing toasted whole wheat bread, premium salted butter, and fresh milk.',
+    image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&q=80&w=600',
+    prepTime: '5m',
+    difficulty: 'Easy',
+    serves: '1-2',
+    ingredientSlugs: ['whole-wheat-bread', 'amul-salted-butter', 'fresh-toned-milk'],
+    fallbackIngredients: [
+      {
+        _id: '201',
+        name: 'Whole Wheat Bread',
+        slug: 'whole-wheat-bread',
+        price: 50,
+        discountPrice: 45,
+        unit: '400 g',
+        images: ['https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&q=80&w=400'],
+        stock: 60
+      },
+      {
+        _id: '105',
+        name: 'Amul Salted Butter',
+        slug: 'amul-salted-butter',
+        price: 105,
+        discountPrice: 102,
+        unit: '100 g',
+        images: ['https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?auto=format&fit=crop&q=80&w=400'],
+        stock: 90
+      },
+      {
+        _id: '102',
+        name: 'Fresh Toned Milk',
+        slug: 'fresh-toned-milk',
+        price: 32,
+        discountPrice: 30,
+        unit: '500 ml',
+        images: ['https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&q=80&w=400'],
+        stock: 200
+      }
+    ]
+  },
+  {
+    id: 'recipe-fruits',
+    title: 'Immunity Fruit Bowl & Juice',
+    description: 'Rejuvenate your body with sweet imported Royal Gala apples, organic bananas, and pure orange juice.',
+    image: 'https://images.unsplash.com/photo-1519996529931-28324d5a630e?auto=format&fit=crop&q=80&w=600',
+    prepTime: '10m',
+    difficulty: 'Easy',
+    serves: '2',
+    ingredientSlugs: ['royal-gala-apple', 'organic-banana', 'orange-fruit-juice'],
+    fallbackIngredients: [
+      {
+        _id: '104',
+        name: 'Royal Gala Apple',
+        slug: 'royal-gala-apple',
+        price: 180,
+        discountPrice: 159,
+        unit: '4 pcs',
+        images: ['https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&q=80&w=400'],
+        stock: 50
+      },
+      {
+        _id: '101',
+        name: 'Organic Banana (Robusta)',
+        slug: 'organic-banana',
+        price: 60,
+        discountPrice: 48,
+        unit: '6 pcs',
+        images: ['https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&q=80&w=400'],
+        stock: 80
+      },
+      {
+        _id: '202',
+        name: '100% Orange Fruit Juice',
+        slug: 'orange-fruit-juice',
+        price: 120,
+        discountPrice: 99,
+        unit: '1 L',
+        images: ['https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&q=80&w=400'],
+        stock: 100
+      }
+    ]
+  }
+];
+
 export default function HomePage() {
   const [countdown, setCountdown] = useState({ hours: 2, minutes: 45, seconds: 30 });
   const [activeSlide, setActiveSlide] = useState(0);
+  const { addToCart } = useCartStore();
+  const [addingRecipeId, setAddingRecipeId] = useState<string | null>(null);
+
+  // Fetch all products to resolve ingredients with exact db details
+  const { data: allProducts = [] } = useQuery<Product[]>({
+    queryKey: ['all-products-for-recipes'],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest<{ products: Product[] }>('/products', { params: { limit: '100' } });
+        return res.products || [];
+      } catch (err) {
+        console.error('Error fetching products for recipe kits:', err);
+        return [];
+      }
+    }
+  });
+
+  const resolveProduct = (slug: string, fallback: any) => {
+    const dbProd = allProducts.find((p: any) => p.slug === slug);
+    return dbProd ? {
+      _id: dbProd._id,
+      name: dbProd.name,
+      slug: dbProd.slug,
+      price: dbProd.price,
+      discountPrice: dbProd.discountPrice,
+      unit: dbProd.unit,
+      images: dbProd.images,
+      stock: dbProd.stock
+    } : fallback;
+  };
+
+  const getBundlePrice = (recipe: typeof RECIPES[0]) => {
+    let total = 0;
+    let discountTotal = 0;
+    recipe.ingredientSlugs.forEach(slug => {
+      const fallback = recipe.fallbackIngredients.find(x => x.slug === slug);
+      const item = resolveProduct(slug, fallback);
+      total += item.price;
+      discountTotal += item.discountPrice || item.price;
+    });
+    return { total, discountTotal };
+  };
+
+  const handleAddRecipe = (recipe: typeof RECIPES[0]) => {
+    setAddingRecipeId(recipe.id);
+    recipe.ingredientSlugs.forEach(slug => {
+      const fallback = recipe.fallbackIngredients.find(x => x.slug === slug);
+      const product = resolveProduct(slug, fallback);
+      addToCart(product, 1);
+    });
+    setTimeout(() => {
+      setAddingRecipeId(null);
+    }, 2000);
+  };
 
   const slides = [
     {
@@ -274,6 +458,145 @@ export default function HomePage() {
               <p className="text-[9px] text-slate-400 mt-0.5">{brand.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* AI Meal Kit Recipe Section */}
+      <section className="mb-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="font-heading text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <Utensils className="w-6 h-6 text-emerald-500" />
+              Cook Fresh Tonight — AI Meal Kits
+            </h2>
+            <p className="text-xs text-slate-400">One-click bundles with all the fresh ingredients you need</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {RECIPES.map((recipe) => {
+            const { total, discountTotal } = getBundlePrice(recipe);
+            const isAdding = addingRecipeId === recipe.id;
+            
+            return (
+              <div
+                key={recipe.id}
+                className="relative overflow-hidden rounded-[2rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300 flex flex-col justify-between h-full group"
+              >
+                {/* Image & Badges */}
+                <div className="relative h-48 w-full overflow-hidden">
+                  <img
+                    src={recipe.image}
+                    alt={recipe.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent"></div>
+                  
+                  {/* Badges Overlay */}
+                  <div className="absolute top-4 left-4 flex gap-1.5 flex-wrap">
+                    <span className="flex items-center gap-1 bg-slate-950/85 backdrop-blur-md text-[10px] font-extrabold text-white px-2.5 py-1 rounded-full border border-white/10">
+                      <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                      {recipe.prepTime}
+                    </span>
+                    <span className="flex items-center gap-1 bg-emerald-500/90 text-[10px] font-extrabold text-slate-950 px-2.5 py-1 rounded-full">
+                      <Sparkles className="w-3 h-3 text-slate-950" />
+                      {recipe.difficulty}
+                    </span>
+                  </div>
+                  
+                  <div className="absolute bottom-4 left-4 right-4">
+                    <h3 className="font-heading text-base font-black text-white leading-snug drop-shadow-md">
+                      {recipe.title}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-5 flex-1 flex flex-col justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      {recipe.description}
+                    </p>
+
+                    <div className="space-y-2 mb-4 bg-slate-50 dark:bg-slate-950/50 p-3 rounded-2xl border border-slate-100/50 dark:border-slate-850">
+                      <p className="text-[9px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+                        <span>Required Ingredients</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      </p>
+                      {recipe.ingredientSlugs.map((slug) => {
+                        const fallback = recipe.fallbackIngredients.find((x) => x.slug === slug);
+                        const item = resolveProduct(slug, fallback);
+                        return (
+                          <div key={slug} className="flex items-center justify-between text-xs py-0.5">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={item.images[0]}
+                                alt={item.name}
+                                className="w-8 h-8 rounded-lg object-cover border border-slate-200 dark:border-slate-800 animate-fade-in"
+                              />
+                              <span className="font-bold text-slate-700 dark:text-slate-350 line-clamp-1">
+                                {item.name}
+                              </span>
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-extrabold bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 px-1.5 py-0.5 rounded-md">
+                              {item.unit}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Footer & CTA */}
+                  <div className="mt-2 pt-3 border-t border-slate-100 dark:border-slate-850">
+                    <div className="flex items-center justify-between mb-3.5">
+                      <div>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Bundle price</p>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-lg font-black text-slate-900 dark:text-white">
+                            ₹{discountTotal}
+                          </span>
+                          {total > discountTotal && (
+                            <span className="text-xs text-slate-400 line-through">
+                              ₹{total}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {total > discountTotal && (
+                        <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded-lg border border-emerald-200/50 dark:border-emerald-800/30">
+                          Save ₹{total - discountTotal}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleAddRecipe(recipe)}
+                      disabled={isAdding}
+                      className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98] ${
+                        isAdding
+                          ? 'bg-slate-900 text-emerald-450 dark:bg-emerald-600 dark:text-slate-950 cursor-wait'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 cursor-pointer shadow-emerald-500/10 hover:shadow-emerald-500/20'
+                      }`}
+                    >
+                      {isAdding ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>Added to Basket! ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingBag className="w-4 h-4" />
+                          <span>Add All Ingredients</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
