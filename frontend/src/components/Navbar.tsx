@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ShoppingBag, Search, Sun, Moon, MapPin, User, LogOut, ShoppingCart, ShieldAlert } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
+import CartDrawer from './CartDrawer';
 
 export default function Navbar() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function Navbar() {
   const { items, getTotals } = useCartStore();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const { grandTotal } = getTotals();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -174,6 +176,10 @@ export default function Navbar() {
             {/* Cart Widget */}
             <Link
               href="/cart"
+              onClick={(e) => {
+                e.preventDefault();
+                setCartOpen(true);
+              }}
               className="bg-slate-900 text-white dark:bg-emerald-500 dark:text-slate-950 px-4 py-2 rounded-xl flex items-center gap-2 hover:opacity-95 shadow-md transition-all font-semibold text-xs active:scale-95"
             >
               <ShoppingCart className="w-4 h-4" />
@@ -189,6 +195,7 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+      <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} />
     </nav>
   );
 }
