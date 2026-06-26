@@ -32,6 +32,41 @@ interface Product {
 
 export default function HomePage() {
   const [countdown, setCountdown] = useState({ hours: 2, minutes: 45, seconds: 30 });
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  const slides = [
+    {
+      badge: "LIGHTNING SPEED DELIVERY IN 15 MINUTES",
+      title: "Freshness Delivered in Minutes!",
+      desc: "Say goodbye to waiting lists and long lines. Get fresh organic farm vegetables, tomatoes, and dairy supplies delivered instantly.",
+      bg: "from-emerald-500/95 to-teal-650/95 dark:from-emerald-950/85 dark:to-slate-900",
+      btnText: "Order Groceries Now",
+      btnLink: "/search"
+    },
+    {
+      badge: "CRAVINGS SORTED 24/7",
+      title: "Midnight Munchies & Cravings!",
+      desc: "Need late night chips, chocolates, carbonated drinks, or warm croissants? We deliver through the night at lightning speed.",
+      bg: "from-purple-650/95 to-rose-650/95 dark:from-purple-950/85 dark:to-slate-900",
+      btnText: "Explore Munchies",
+      btnLink: "/categories/snacks-munchies"
+    },
+    {
+      badge: "SUPER DISCOUNT OFFERS",
+      title: "Unlock Extra Monsoon Savings!",
+      desc: "Get flat 20% off on premium organic baking supplies, breads, and fresh butter. Code: WELCOME100 or FRESH30.",
+      bg: "from-amber-500/95 to-orange-650/95 dark:from-amber-950/85 dark:to-slate-900",
+      btnText: "View Coupons",
+      btnLink: "/profile"
+    }
+  ];
+
+  useEffect(() => {
+    const slideTimer = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % 3);
+    }, 6000);
+    return () => clearInterval(slideTimer);
+  }, []);
 
   // 1. Fetch Categories
   const { data: categories = [] } = useQuery<Category[]>({
@@ -120,41 +155,57 @@ export default function HomePage() {
   return (
     <Layout>
       {/* Hero Banner Section */}
-      <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-emerald-500/90 to-teal-600/90 dark:from-emerald-950/80 dark:to-slate-900 text-slate-950 dark:text-white p-8 md:p-12 mb-12 shadow-2xl">
-        <div className="absolute right-[-10%] top-[-10%] w-[45%] aspect-square bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute left-[30%] bottom-[-20%] w-[35%] aspect-square bg-emerald-300/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="relative overflow-hidden rounded-[2.5rem] shadow-2xl mb-12 min-h-[340px] flex items-center bg-slate-900">
+        {slides.map((slide, idx) => (
+          <div
+            key={idx}
+            className={`absolute inset-0 bg-gradient-to-br ${slide.bg} p-8 md:p-12 flex flex-col justify-center transition-all duration-700 ${idx === activeSlide ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-95 pointer-events-none -z-10'}`}
+          >
+            <div className="absolute right-[-10%] top-[-10%] w-[45%] aspect-square bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute left-[30%] bottom-[-20%] w-[35%] aspect-square bg-emerald-300/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="max-w-2xl relative z-10">
-          <div className="inline-flex items-center gap-1.5 bg-white/20 dark:bg-emerald-500/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-slate-950 dark:text-emerald-400 mb-6">
-            <Zap className="w-4 h-4 fill-current" />
-            <span>LIGHTNING SPEED DELIVERY IN 15 MINUTES</span>
+            <div className="max-w-2xl relative z-10 text-white">
+              <div className="inline-flex items-center gap-1.5 bg-white/20 dark:bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase mb-5">
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                <span>{slide.badge}</span>
+              </div>
+
+              <h1 className="font-heading text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-tight mb-4">
+                {slide.title}
+              </h1>
+              
+              <p className="text-xs sm:text-sm text-white/95 mb-8 max-w-lg leading-relaxed">
+                {slide.desc}
+              </p>
+
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href={slide.btnLink}
+                  className="bg-slate-950 hover:bg-slate-900 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 px-6 py-3 rounded-2xl font-bold text-xs transition-all shadow-lg active:scale-95"
+                >
+                  {slide.btnText}
+                </Link>
+                <a
+                  href="#categories"
+                  className="bg-white/20 hover:bg-white/30 border border-white/25 px-6 py-3 rounded-2xl font-bold text-xs transition-all backdrop-blur-xs flex items-center gap-1 text-white"
+                >
+                  Browse Categories
+                  <ChevronRight className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
           </div>
-
-          <h1 className="font-heading text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-tight mb-4">
-            Freshness <br className="sm:hidden" />
-            <span className="text-white dark:text-emerald-400">Delivered</span> <br />
-            in Minutes!
-          </h1>
-          
-          <p className="text-sm md:text-base text-emerald-950/80 dark:text-slate-300 mb-8 max-w-lg">
-            Say goodbye to waiting lists and long lines. Get vegetables, fresh farm milk, crunchiest chips, and daily household supplies delivered instantly.
-          </p>
-
-          <div className="flex flex-wrap gap-4">
-            <Link
-              href="/search"
-              className="bg-slate-950 hover:bg-slate-900 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 px-6 py-3 rounded-2xl font-bold text-sm transition-all shadow-lg hover:shadow-xl active:scale-95"
-            >
-              Order Groceries Now
-            </Link>
-            <a
-              href="#categories"
-              className="bg-white/20 dark:bg-white/10 hover:bg-white/30 dark:hover:bg-white/20 border border-white/25 px-6 py-3 rounded-2xl font-bold text-sm transition-all backdrop-blur-xs flex items-center gap-1"
-            >
-              Browse Categories
-              <ChevronRight className="w-4 h-4" />
-            </a>
-          </div>
+        ))}
+        {/* Slide Indicator Dots */}
+        <div className="absolute bottom-6 left-8 md:left-12 flex gap-2 z-20">
+          {slides.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveSlide(idx)}
+              className={`w-2 h-2 rounded-full transition-all duration-300 ${idx === activeSlide ? 'bg-white w-6' : 'bg-white/40'}`}
+              aria-label={`Slide ${idx + 1}`}
+            />
+          ))}
         </div>
       </div>
 
@@ -187,6 +238,41 @@ export default function HomePage() {
                 {cat.name}
               </h3>
             </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Featured Brands Section */}
+      <section className="mb-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="font-heading text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+              Featured Brands
+            </h2>
+            <p className="text-xs text-slate-400">Order from your favorite household grocery brands</p>
+          </div>
+        </div>
+
+        <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar scroll-smooth">
+          {[
+            { name: "Amul", logo: "🧈", desc: "Dairy Specialties", bg: "bg-emerald-500/10 text-emerald-500" },
+            { name: "Coca-Cola", logo: "🥤", desc: "Refreshing Beverages", bg: "bg-red-500/10 text-red-500" },
+            { name: "Lay's", logo: "🥔", desc: "Crispy Snacks", bg: "bg-amber-500/10 text-amber-500" },
+            { name: "Cadbury", logo: "🍫", desc: "Sweet Chocolates", bg: "bg-purple-500/10 text-purple-500" },
+            { name: "Haldiram's", logo: "🥨", desc: "Traditional Namkeen", bg: "bg-orange-500/10 text-orange-500" },
+            { name: "Nestle", logo: "☕", desc: "Hot Drinks & Noodles", bg: "bg-blue-500/10 text-blue-500" },
+            { name: "Mother Dairy", logo: "🥛", desc: "Fresh Milk & Curd", bg: "bg-sky-500/10 text-sky-505 text-sky-500" }
+          ].map((brand, idx) => (
+            <div
+              key={idx}
+              className="flex-shrink-0 w-40 bg-white dark:bg-slate-900 border border-slate-105 dark:border-slate-800/80 rounded-[2rem] p-4 flex flex-col items-center justify-center hover:shadow-md transition-shadow duration-300"
+            >
+              <div className={`w-12 h-12 rounded-xl ${brand.bg} flex items-center justify-center text-2xl mb-3 shadow-xs`}>
+                {brand.logo}
+              </div>
+              <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200">{brand.name}</h4>
+              <p className="text-[9px] text-slate-400 mt-0.5">{brand.desc}</p>
+            </div>
           ))}
         </div>
       </section>
