@@ -38,7 +38,44 @@ export default function CheckoutPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentSuccessPopup, setPaymentSuccessPopup] = useState(false);
 
+  // Credit Card Form States
+  const [cardName, setCardName] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [upiId, setUpiId] = useState('');
+
+  // 3DS Verification Modal States
+  const [show3dsModal, setShow3dsModal] = useState(false);
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [userOtpInput, setUserOtpInput] = useState('');
+  const [otpError, setOtpError] = useState('');
+
+  // UPI Request Modal State
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [upiTimer, setUpiTimer] = useState(15);
+
+  const [paymentFormErrors, setPaymentFormErrors] = useState<Record<string, string>>({});
+
   const { subtotal, tax, deliveryFee, discount, grandTotal } = getTotals();
+
+  // Luhn algorithm card check
+  const validateLuhn = (num: string) => {
+    const sanitized = num.replace(/\s+/g, '');
+    if (!/^\d+$/.test(sanitized)) return false;
+    let sum = 0;
+    let shouldDouble = false;
+    for (let i = sanitized.length - 1; i >= 0; i--) {
+      let digit = parseInt(sanitized.charAt(i));
+      if (shouldDouble) {
+        digit *= 2;
+        if (digit > 9) digit -= 9;
+      }
+      sum += digit;
+      shouldDouble = !shouldDouble;
+    }
+    return sum % 10 === 0;
+  };
 
   // 1. Add Address Mutation
   const addAddressMutation = useMutation({
@@ -128,6 +165,50 @@ export default function CheckoutPage() {
       return;
     }
 
+    setPaymentFormErrors({});
+    const errors: Record<string, string> = {};
+
+    if (paymentMethod === 'stripe') {
+      if (!cardName.trim()) errors.cardName = 'Cardholder name is required';
+      if (!cardNumber.trim()) {
+        errors.cardNumber = 'Card number is required';
+      } else if (!validateLuhn(cardNumber)) {
+        errors.cardNumber = 'Invalid card number (fails Luhn algorithm)';
+      }
+      
+      const cardExpiryPattern = /^(0[1-9]|1[0-2])\/\d{2}$/;
+      if (!cardExpiry.trim()) {
+        errors.cardExpiry = 'Expiry date is required';
+      } else if (!cardExpiryPattern.test(cardExpiry)) {
+        errors.cardExpiry = 'Must be in MM/YY format';
+      } else {
+        const [month, year] = cardExpiry.split('/').map(Number);
+        const currentYear = new Date().getFullYear() % 100;
+        const currentMonth = new Date().getMonth() + 1;
+        if (year < currentYear || (year === currentYear && month < currentMonth)) {
+          errors.cardExpiry = 'Card has expired';
+        }
+      }
+
+      if (!cardCvv.trim()) {
+        errors.cardCvv = 'CVV is required';
+      } else if (!/^\d{3,4}$/.test(cardCvv)) {
+        errors.cardCvv = 'Must be 3 or 4 digits';
+      }
+    } else if (paymentMethod === 'razorpay') {
+      const upiPattern = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+      if (!upiId.trim()) {
+        errors.upiId = 'UPI ID is required';
+      } else if (!upiPattern.test(upiId)) {
+        errors.upiId = 'Invalid UPI ID format (e.g. name@okaxis)';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setPaymentFormErrors(errors);
+      return;
+    }
+
     const orderPayload = {
       items: items.map((item) => ({
         product: item.product._id,
@@ -147,21 +228,91 @@ export default function CheckoutPage() {
       deliverySlot
     };
 
-    if (paymentMethod !== 'cod') {
-      // Simulate real-time stripe / razorpay card checkouts
+    if (paymentMethod === 'stripe') {
+      // Generate 6-digit mock bank code
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedOtp(otp);
+      setUserOtpInput('');
+      setOtpError('');
+      setShow3dsModal(true);
+    } else if (paymentMethod === 'razorpay') {
+      setShowUpiModal(true);
+      setUpiTimer(8);
+    } else {
+      createOrderMutation.mutate(orderPayload);
+    }
+  };
+
+  const handleVerifyOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userOtpInput === generatedOtp || userOtpInput === '123456') {
+      setShow3dsModal(false);
       setPaymentLoading(true);
       setTimeout(() => {
         setPaymentLoading(false);
         setPaymentSuccessPopup(true);
         setTimeout(() => {
           setPaymentSuccessPopup(false);
-          createOrderMutation.mutate(orderPayload);
+          const activeAddress = (user?.addresses || [])[selectedAddressIndex];
+          createOrderMutation.mutate({
+            items: items.map((item) => ({
+              product: item.product._id,
+              quantity: item.quantity
+            })),
+            deliveryAddress: {
+              label: activeAddress.label,
+              street: activeAddress.street,
+              city: activeAddress.city,
+              state: activeAddress.state,
+              zipCode: activeAddress.zipCode,
+              country: activeAddress.country,
+              coordinates: activeAddress.coordinates || { lat: 12.9716, lng: 77.5946 }
+            },
+            paymentGateway: 'stripe',
+            couponCode: coupon?.code || undefined,
+            deliverySlot
+          });
         }, 1500);
-      }, 2500);
+      }, 1000);
     } else {
-      createOrderMutation.mutate(orderPayload);
+      setOtpError('Invalid 3D Secure verification code. Please check the mock SMS banner.');
     }
   };
+
+  useEffect(() => {
+    if (!showUpiModal) return;
+    if (upiTimer <= 0) {
+      setShowUpiModal(false);
+      setPaymentSuccessPopup(true);
+      setTimeout(() => {
+        setPaymentSuccessPopup(false);
+        const activeAddress = (user?.addresses || [])[selectedAddressIndex];
+        createOrderMutation.mutate({
+          items: items.map((item) => ({
+            product: item.product._id,
+            quantity: item.quantity
+          })),
+          deliveryAddress: {
+            label: activeAddress.label,
+            street: activeAddress.street,
+            city: activeAddress.city,
+            state: activeAddress.state,
+            zipCode: activeAddress.zipCode,
+            country: activeAddress.country,
+            coordinates: activeAddress.coordinates || { lat: 12.9716, lng: 77.5946 }
+          },
+          paymentGateway: 'razorpay',
+          couponCode: coupon?.code || undefined,
+          deliverySlot
+        });
+      }, 1500);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setUpiTimer(upiTimer - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [showUpiModal, upiTimer]);
 
   return (
     <Layout>
@@ -355,6 +506,100 @@ export default function CheckoutPage() {
                 </div>
               </div>
             </div>
+
+            {/* Simulated interactive Card details inputs */}
+            {paymentMethod === 'stripe' && (
+              <div className="mt-6 border-t border-slate-100 dark:border-slate-850 pt-6 text-xs space-y-4 animate-fade-in text-slate-850 dark:text-slate-200">
+                <h3 className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-emerald-500" />
+                  Credit / Debit Card Details
+                </h3>
+                
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase mb-1">Cardholder Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. John Doe"
+                      value={cardName}
+                      onChange={(e) => setCardName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                    />
+                    {paymentFormErrors.cardName && <p className="text-[10px] text-red-500 mt-1 font-medium">{paymentFormErrors.cardName}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-455 dark:text-slate-500 uppercase mb-1">Card Number</label>
+                    <input
+                      type="text"
+                      placeholder="4111 1111 1111 1111"
+                      value={cardNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        const formatted = val.match(/.{1,4}/g)?.join(' ') || val;
+                        setCardNumber(formatted.slice(0, 19));
+                      }}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono font-medium tracking-widest"
+                    />
+                    {paymentFormErrors.cardNumber && <p className="text-[10px] text-red-500 mt-1 font-medium">{paymentFormErrors.cardNumber}</p>}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase mb-1">Expiry (MM/YY)</label>
+                      <input
+                        type="text"
+                        placeholder="MM/YY"
+                        value={cardExpiry}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/\D/g, '');
+                          if (val.length > 2) {
+                            val = val.slice(0, 2) + '/' + val.slice(2, 4);
+                          }
+                          setCardExpiry(val.slice(0, 5));
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                      />
+                      {paymentFormErrors.cardExpiry && <p className="text-[10px] text-red-500 mt-1 font-medium">{paymentFormErrors.cardExpiry}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase mb-1">CVV</label>
+                      <input
+                        type="password"
+                        placeholder="•••"
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono tracking-widest font-medium"
+                      />
+                      {paymentFormErrors.cardCvv && <p className="text-[10px] text-red-500 mt-1 font-medium">{paymentFormErrors.cardCvv}</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Simulated UPI ID inputs */}
+            {paymentMethod === 'razorpay' && (
+              <div className="mt-6 border-t border-slate-100 dark:border-slate-850 pt-6 text-xs space-y-4 animate-fade-in text-slate-850 dark:text-slate-200">
+                <h3 className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Landmark className="w-4 h-4 text-emerald-500" />
+                  Razorpay UPI Payment
+                </h3>
+                
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase mb-1">Enter UPI ID</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. johndoe@okaxis"
+                    value={upiId}
+                    onChange={(e) => setUpiId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                  />
+                  {paymentFormErrors.upiId && <p className="text-[10px] text-red-500 mt-1 font-medium">{paymentFormErrors.upiId}</p>}
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
@@ -453,6 +698,91 @@ export default function CheckoutPage() {
         </div>
 
       </div>
+
+      {/* Simulated 3D-Secure card verification portal */}
+      {show3dsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center font-sans text-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-[2.5rem] shadow-2xl flex flex-col gap-6 max-w-md w-full mx-4 relative overflow-hidden">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-850">
+              <div>
+                <h3 className="font-heading font-black text-slate-950 dark:text-white text-base">Secure Gateway Check</h3>
+                <p className="text-[10px] text-slate-400">Verified by Visa / Mastercard ID Check</p>
+              </div>
+              <span className="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded text-[8px] font-bold">MOCK GATEWAY</span>
+            </div>
+
+            {/* Simulated SMS Alert widget */}
+            <div className="bg-slate-950/90 dark:bg-black text-emerald-400 p-3.5 rounded-2xl border border-emerald-500/20 text-[10px] space-y-1 select-none">
+              <p className="font-bold flex items-center gap-1.5 text-white">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                BANK SMS SIMULATOR (Mock SMS alert)
+              </p>
+              <p className="leading-relaxed opacity-90">
+                Your security OTP code for payment of <span className="font-extrabold text-white">₹{grandTotal}</span> to FreshKart is: <span className="font-black text-white bg-slate-850 px-2 py-0.5 rounded text-xs select-all border border-white/10">{generatedOtp}</span>.
+              </p>
+            </div>
+
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-450 dark:text-slate-500 uppercase">Enter 6-Digit OTP</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 123456"
+                  value={userOtpInput}
+                  onChange={(e) => setUserOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-850 px-3.5 py-3 rounded-xl text-center text-lg font-black tracking-widest text-slate-850 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                  required
+                />
+                {otpError && <p className="text-[10px] text-red-500 mt-1 text-center font-medium leading-normal">{otpError}</p>}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShow3dsModal(false)}
+                  className="flex-grow bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-850 text-slate-550 dark:text-slate-350 font-bold py-3.5 rounded-2xl transition-all cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-grow bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-3.5 rounded-2xl transition-all cursor-pointer text-center"
+                >
+                  Confirm & Pay
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Simulated UPI Request Modal */}
+      {showUpiModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center font-sans text-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center justify-center text-center gap-5 max-w-sm w-full mx-4">
+            <div className="relative flex items-center justify-center">
+              <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+              <Landmark className="w-6 h-6 text-emerald-500 absolute" />
+            </div>
+
+            <div>
+              <h3 className="font-heading font-black text-slate-900 dark:text-white text-base">Awaiting UPI Approval</h3>
+              <p className="text-[10px] text-slate-400 mt-1 leading-normal">Open your mobile UPI app (GPay / PhonePe / Paytm) to approve the collect request of ₹{grandTotal}.</p>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 px-4 py-2.5 rounded-2xl w-full">
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">Autosubmitting in {upiTimer} seconds...</p>
+            </div>
+
+            <button
+              onClick={() => setShowUpiModal(false)}
+              className="w-full bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-850 text-slate-550 dark:text-slate-350 font-bold py-3 rounded-2xl transition-all cursor-pointer text-center"
+            >
+              Cancel Checkout
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
