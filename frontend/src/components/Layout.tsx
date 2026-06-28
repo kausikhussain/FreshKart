@@ -1,13 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import io from 'socket.io-client';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import CartDrawer from './CartDrawer';
 import HelpChatbot from './HelpChatbot';
+import NotificationToast, { triggerNotification } from './NotificationToast';
 import { useCartStore } from '@/store/cartStore';
+import { useAuthStore } from '@/store/authStore';
+import { apiRequest } from '@/lib/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,6 +21,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const pathname = usePathname();
   const { items, getTotals } = useCartStore();
+  const { user } = useAuthStore();
   const [cartOpen, setCartOpen] = useState(false);
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -23,6 +29,66 @@ export default function Layout({ children }: LayoutProps) {
 
   const isCartOrCheckout = pathname === '/cart' || pathname === '/checkout' || pathname?.includes('/track');
   const showFloatingCart = totalItems > 0 && !isCartOrCheckout;
+
+  // Fetch active/pending orders to register socket notification rooms
+  const { data: myOrders = [], refetch: refetchOrders } = useQuery<any[]>({
+    queryKey: ['my-orders-notifications'],
+    queryFn: () => apiRequest<any[]>('/orders/my'),
+    enabled: !!user,
+    refetchInterval: 15000 // keep synced periodically
+  });
+
+  // Setup global websocket listener for order status changes and driver dispatches
+  useEffect(() => {
+    if (!user || myOrders.length === 0) return;
+
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+    const socketInstance = io(socketUrl);
+
+    socketInstance.on('connect', () => {
+      console.log('Global notification socket connected');
+      // Join room for each active order
+      myOrders.forEach((order) => {
+        if (order.status !== 'delivered' && order.status !== 'cancelled') {
+          socketInstance.emit('joinOrder', order._id);
+          console.log(`Joined global notification room for order ${order._id}`);
+        }
+      });
+    });
+
+    // Listen for status changes
+    socketInstance.on('orderStatusChanged', (data: { orderId: string; status: string }) => {
+      console.log('Received order status change in layout:', data);
+      
+      let note = `Order status updated to ${data.status}`;
+      if (data.status === 'confirmed') note = 'Your order has been accepted by the store!';
+      if (data.status === 'packed') note = 'Store partner has packed your order. Awaiting rider pickup.';
+      if (data.status === 'out-for-delivery') note = 'Rider is out for delivery! Track your order live on the map.';
+      if (data.status === 'delivered') note = 'Your fresh groceries have been delivered! Thank you for choosing FreshKart.';
+
+      triggerNotification({
+        title: `Order Update: ${data.status.replace('-', ' ').toUpperCase()}`,
+        message: note,
+        type: data.status === 'delivered' ? 'success' : data.status === 'out-for-delivery' ? 'delivery' : 'warning'
+      });
+      
+      refetchOrders();
+    });
+
+    // Listen for driver assignments
+    socketInstance.on('driverAssigned', (data: { orderId: string; driver: any }) => {
+      triggerNotification({
+        title: 'Driver Dispatched!',
+        message: `Rider ${data.driver.name} is on the way to collect your groceries.`,
+        type: 'delivery'
+      });
+      refetchOrders();
+    });
+
+    return () => {
+      socketInstance.disconnect();
+    };
+  }, [user, myOrders.length]); // Rejoin if user or active order count changes
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
@@ -68,6 +134,9 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Floating AI Help Chatbot */}
       <HelpChatbot />
+
+      {/* Global Notifications System */}
+      <NotificationToast />
     </div>
   );
 }
