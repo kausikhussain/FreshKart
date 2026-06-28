@@ -286,11 +286,16 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
 export const assignDriver = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { orderId } = req.params;
-    const driverId = req.user?.role === 'admin' ? req.body.driverId : req.user?._id;
+    let resolvedDriverId = driverId;
+    if (driverId === 'default' || !driverId || typeof driverId !== 'string' || !driverId.match(/^[0-9a-fA-F]{24}$/)) {
+      const defaultDriver = await User.findOne({ role: 'delivery' });
+      if (!defaultDriver) {
+        return res.status(400).json({ message: 'No delivery partner accounts available in database' });
+      }
+      resolvedDriverId = defaultDriver._id.toString();
+    }
 
-    if (!driverId) return res.status(400).json({ message: 'Driver ID is required' });
-
-    const driver = await User.findById(driverId);
+    const driver = await User.findById(resolvedDriverId);
     if (!driver || driver.role !== 'delivery') {
       return res.status(400).json({ message: 'Invalid driver assigned' });
     }
@@ -298,10 +303,12 @@ export const assignDriver = async (req: AuthenticatedRequest, res: Response) => 
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    order.deliveryPartner = driverId;
-    order.status = 'confirmed'; // auto transition if pending
+    order.deliveryPartner = resolvedDriverId;
+    if (order.status === 'pending') {
+      order.status = 'confirmed';
+    }
     order.trackingUpdates.push({
-      status: 'confirmed',
+      status: order.status,
       note: `Delivery partner ${driver.name} assigned to order.`
     });
 
